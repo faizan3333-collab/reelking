@@ -1,12 +1,13 @@
 "use client";
 
 import { useAuth } from "@/hooks/useAuth";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useEffect } from "react";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
@@ -37,15 +38,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             { href: "/history", icon: "📜", label: "History" },
             { href: "/credits", icon: "💰", label: "Credits" },
             { href: "/settings", icon: "⚙️", label: "Settings" },
-          ].map(({ href, icon, label }) => (
-            <a key={href} href={href}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all"
-              style={{ color: "rgba(255,255,255,0.4)" }}
-            >
-              <span className="w-5 text-center">{icon}</span>
-              {label}
-            </a>
-          ))}
+          ].map(({ href, icon, label }) => {
+            const isActive = pathname === href;
+            return (
+              <a key={href} href={href}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all"
+                style={{
+                  color: isActive ? "#9F7AEA" : "rgba(255,255,255,0.4)",
+                  background: isActive ? "rgba(124,58,237,0.12)" : "transparent",
+                  fontWeight: isActive ? 600 : 400,
+                }}
+              >
+                <span className="w-5 text-center">{icon}</span>
+                {label}
+              </a>
+            );
+          })}
         </nav>
 
         {/* Bottom */}
