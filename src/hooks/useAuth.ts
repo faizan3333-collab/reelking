@@ -9,7 +9,6 @@ import {
   signOut,
   User,
 } from "firebase/auth";
-import { adminDb } from "@/lib/firebase/admin";
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
