@@ -9,13 +9,11 @@ export function useCredits(uid: string | null) {
   const [credits, setCredits] = useState(0);
   const [lifetimeUsed, setLifetimeUsed] = useState(0);
   const [isPro, setIsPro] = useState(false);
+  const [proExpiresAt, setProExpiresAt] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!uid) {
-      setLoading(false);
-      return;
-    }
+    if (!uid) { setLoading(false); return; }
 
     const userRef = doc(db, "users", uid);
     const unsubscribe = onSnapshot(userRef, (snap) => {
@@ -24,6 +22,7 @@ export function useCredits(uid: string | null) {
         setCredits(data.credits ?? 0);
         setLifetimeUsed(data.lifetimeUsed ?? 0);
         setIsPro(data.isPro ?? false);
+        setProExpiresAt(data.proExpiresAt?.toDate() ?? null);
       }
       setLoading(false);
     });
@@ -39,5 +38,5 @@ export function useCredits(uid: string | null) {
     ? `${credits} credits`
     : `${PLANS.FREE_LIFETIME_GENS - lifetimeUsed} free gens left`;
 
-  return { credits, lifetimeUsed, isPro, loading, canGenerate, creditsLeft };
+  return { credits, lifetimeUsed, isPro, proExpiresAt, loading, canGenerate, creditsLeft };
 }
