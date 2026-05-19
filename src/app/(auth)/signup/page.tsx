@@ -2,13 +2,12 @@
 
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useRouter } from "next/navigation";
-import { db } from "@/lib/firebase/client";
-import { doc, setDoc } from "firebase/firestore";
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { auth, db } from "@/lib/firebase/client";
+import { doc, setDoc, getDoc } from "firebase/firestore";
 
 export default function SignupPage() {
   const { signup } = useAuth();
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -20,8 +19,6 @@ export default function SignupPage() {
     try {
       const result = await signup(email, password);
       const uid = result.user.uid;
-
-      // Firestore mein user banao
       await setDoc(doc(db, "users", uid), {
         uid,
         email,
@@ -30,7 +27,6 @@ export default function SignupPage() {
         lifetimeUsed: 0,
         createdAt: new Date(),
       });
-
       window.location.href = "/generate";
     } catch (err: any) {
       if (err.code === "auth/email-already-in-use") {
@@ -42,6 +38,30 @@ export default function SignupPage() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogle = async () => {
+    setError("");
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const uid = result.user.uid;
+      const userRef = doc(db, "users", uid);
+      const userSnap = await getDoc(userRef);
+      if (!userSnap.exists()) {
+        await setDoc(userRef, {
+          uid,
+          email: result.user.email,
+          isPro: false,
+          credits: 0,
+          lifetimeUsed: 0,
+          createdAt: new Date(),
+        });
+      }
+      window.location.href = "/generate";
+    } catch {
+      setError("Google signup fail hua — dobara try karo");
     }
   };
 
@@ -104,6 +124,7 @@ export default function SignupPage() {
           </div>
 
           <button
+            onClick={handleGoogle}
             className="w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 hover:opacity-80 transition-all"
             style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.6)" }}
           >
@@ -127,10 +148,8 @@ export default function SignupPage() {
       {/* Right - Benefits */}
       <div className="hidden md:flex flex-1 items-center justify-center relative overflow-hidden p-8" style={{ background: "#110F1A" }}>
         <div className="absolute rounded-full pointer-events-none" style={{ width: 400, height: 400, background: "radial-gradient(circle,rgba(124,58,237,0.15) 0%,transparent 65%)", top: "50%", left: "50%", transform: "translate(-50%,-50%)" }}></div>
-
         <div className="w-full max-w-xs relative z-10">
           <p className="text-xs font-semibold uppercase tracking-widest mb-6" style={{ color: "rgba(255,255,255,0.25)" }}>Free mein milega</p>
-
           {[
             { icon: "✨", title: "3 Free Generations", desc: "Signup ke baad seedha try karo — koi credit card nahi" },
             { icon: "📱", title: "Sab Platforms Ek Jagah", desc: "YouTube + Instagram + Facebook — ek idea, sab ready" },
@@ -145,7 +164,6 @@ export default function SignupPage() {
               </div>
             </div>
           ))}
-
           <div className="rounded-2xl p-4 mt-6" style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.2)" }}>
             <p className="text-xs font-semibold mb-1" style={{ color: "#9F7AEA" }}>💡 Pro tip</p>
             <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.4)" }}>

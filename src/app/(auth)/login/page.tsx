@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useRouter } from "next/navigation";
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { auth, db } from "@/lib/firebase/client";
+import { doc, setDoc, getDoc } from "firebase/firestore";
 
 export default function LoginPage() {
   const { login } = useAuth();
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -22,6 +23,30 @@ export default function LoginPage() {
       setError("Email ya password galat hai");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogle = async () => {
+    setError("");
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const uid = result.user.uid;
+      const userRef = doc(db, "users", uid);
+      const userSnap = await getDoc(userRef);
+      if (!userSnap.exists()) {
+        await setDoc(userRef, {
+          uid,
+          email: result.user.email,
+          isPro: false,
+          credits: 0,
+          lifetimeUsed: 0,
+          createdAt: new Date(),
+        });
+      }
+      window.location.href = "/generate";
+    } catch {
+      setError("Google login fail hua — dobara try karo");
     }
   };
 
@@ -90,6 +115,7 @@ export default function LoginPage() {
           </div>
 
           <button
+            onClick={handleGoogle}
             className="w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all hover:opacity-80"
             style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.6)" }}
           >
@@ -108,20 +134,14 @@ export default function LoginPage() {
 
       {/* Right - Preview */}
       <div className="hidden md:flex flex-1 items-center justify-center relative overflow-hidden p-8" style={{ background: "#110F1A" }}>
-        {/* Glow */}
         <div className="absolute rounded-full pointer-events-none" style={{ width: 400, height: 400, background: "radial-gradient(circle,rgba(124,58,237,0.15) 0%,transparent 65%)", top: "50%", left: "50%", transform: "translate(-50%,-50%)" }}></div>
-
         <div className="w-full max-w-xs relative z-10">
           <p className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: "rgba(255,255,255,0.25)" }}>Live preview</p>
-
-          {/* Platform chips */}
           <div className="flex flex-wrap gap-2 mb-5">
             {["▶ YouTube","📸 Instagram","👥 Facebook"].map(p => (
               <span key={p} className="text-xs font-medium px-3 py-1 rounded-full" style={{ background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.3)", color: "#9F7AEA" }}>{p}</span>
             ))}
           </div>
-
-          {/* Output cards */}
           {[
             { icon: "▶", color: "rgba(255,0,0,0.12)", platform: "YouTube Shorts", tag: "Title", text: "Bhai! Ye 1 trick se mera channel 0 se 10K ho gaya 🔥" },
             { icon: "📸", color: "rgba(214,40,120,0.12)", platform: "Instagram Reels", tag: "Caption", text: "Yaar sach bol raha hoon — agar ye nahi kiya toh growth kabhi nahi hogi 😤 Save kar le" },

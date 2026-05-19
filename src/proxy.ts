@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export function middleware(req: NextRequest) {
-  // Auth is handled client-side via Firebase onAuthStateChanged
-  // Dashboard layout redirects to /login if not authenticated
+export function proxy(req: NextRequest) {
   return NextResponse.next();
 }
 

@@ -25,11 +25,9 @@ export default function GeneratePage() {
     if (!idea.trim()) { setError("Pehle apna idea likho"); return; }
     if (selected.length === 0) { setError("Kam se kam ek platform select karo"); return; }
     if (!canGenerate) { setError("Credits khatam — ad dekho ya Pro lo"); return; }
-
     setLoading(true);
     setError("");
     setOutput(null);
-
     try {
       const token = await getToken();
       const res = await fetch("/api/generate", {
@@ -55,20 +53,31 @@ export default function GeneratePage() {
   };
 
   const platformMeta: Record<string, { icon: string; color: string; label: string }> = {
-    youtube: { icon: "▶", color: "rgba(255,0,0,0.15)", label: "YouTube Shorts" },
-    instagram: { icon: "📸", color: "rgba(214,40,120,0.15)", label: "Instagram Reels" },
-    facebook: { icon: "👥", color: "rgba(24,119,242,0.15)", label: "Facebook Reels" },
-    whatsapp: { icon: "💬", color: "rgba(37,211,102,0.15)", label: "WhatsApp" },
+    youtube:   { icon: "▶",  color: "rgba(255,0,0,0.15)",     label: "YouTube Shorts" },
+    instagram: { icon: "📸", color: "rgba(214,40,120,0.15)",  label: "Instagram Reels" },
+    facebook:  { icon: "👥", color: "rgba(24,119,242,0.15)",  label: "Facebook Reels" },
+    whatsapp:  { icon: "💬", color: "rgba(37,211,102,0.15)",  label: "WhatsApp" },
+  };
+
+  const fieldLabels: Record<string, string> = {
+    title: "Title", description: "Description", caption: "Caption",
+    hashtags: "Hashtags", message: "Message",
   };
 
   return (
     <div className="flex flex-col h-full">
       {/* Topbar */}
-      <div className="px-6 py-4 border-b border-white/5">
-        <h1 className="text-base font-bold text-white">Content Generate Karo ✨</h1>
-        <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>
-          Apna idea daalo — sab platforms ke liye ready • {creditsLeft}
-        </p>
+      <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between">
+        <div>
+          <h1 className="text-base font-bold text-white">Content Generate Karo ✨</h1>
+          <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>
+            Apna idea daalo — sab platforms ke liye ready
+          </p>
+        </div>
+        <div className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+          style={{ background: isPro ? "rgba(124,58,237,0.2)" : "rgba(255,255,255,0.05)", color: isPro ? "#9F7AEA" : "rgba(255,255,255,0.4)", border: isPro ? "1px solid rgba(124,58,237,0.3)" : "1px solid rgba(255,255,255,0.08)" }}>
+          {isPro ? "👑 Pro" : `${creditsLeft} credits`}
+        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -113,16 +122,12 @@ export default function GeneratePage() {
             className="w-full py-3.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50 transition-opacity hover:opacity-90 flex items-center justify-center gap-2"
             style={{ background: "linear-gradient(135deg,#7C3AED,#4F46E5)" }}
           >
-            {loading ? (
-              <>
-                <span className="animate-spin">⏳</span> Generate ho raha hai...
-              </>
-            ) : "✨ Generate Karo"}
+            {loading ? <><span className="animate-spin">⏳</span> Generate ho raha hai...</> : "✨ Generate Karo"}
           </button>
         </div>
 
         {/* Right - Output */}
-        <div className="w-80 p-6 border-l border-white/5 overflow-auto flex flex-col gap-3">
+        <div className="w-80 p-6 border-l border-white/5 overflow-auto flex flex-col gap-3" style={{ background: "#110F1A" }}>
           <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.25)" }}>Output</p>
 
           {!output && !loading && (
@@ -143,30 +148,33 @@ export default function GeneratePage() {
             const meta = platformMeta[platformId];
             const data = output[platformId];
             if (!data) return null;
-
             return (
               <div key={platformId} className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs" style={{ background: meta.color }}>{meta.icon}</div>
-                    <span className="text-xs font-semibold text-white">{meta.label}</span>
-                  </div>
-                  <button onClick={() => copyText(JSON.stringify(data, null, 2), platformId)}
-                    className="text-xs transition-colors"
-                    style={{ color: copied === platformId ? "#9F7AEA" : "rgba(255,255,255,0.25)", background: "none", border: "none", cursor: "pointer", fontFamily: "'Plus Jakarta Sans', sans-serif" }}
-                  >
-                    {copied === platformId ? "✓ Copied!" : "Copy"}
-                  </button>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs" style={{ background: meta.color }}>{meta.icon}</div>
+                  <span className="text-xs font-semibold text-white">{meta.label}</span>
                 </div>
 
-                {Object.entries(data).map(([key, val]) => (
-                  <div key={key} className="rounded-lg p-2.5 mb-2" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
-                    <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: "#9F7AEA" }}>{key}</p>
-                    <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.6)" }}>
-                      {Array.isArray(val) ? (val as string[]).join(" ") : val as string}
-                    </p>
-                  </div>
-                ))}
+                {Object.entries(data).map(([key, val]) => {
+                  const text = Array.isArray(val) ? (val as string[]).join(" ") : val as string;
+                  const copyKey = `${platformId}-${key}`;
+                  return (
+                    <div key={key} className="rounded-lg p-2.5 mb-2 group relative" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#9F7AEA" }}>
+                          {fieldLabels[key] || key}
+                        </p>
+                        <button onClick={() => copyText(text, copyKey)}
+                          className="text-xs transition-colors"
+                          style={{ color: copied === copyKey ? "#9F7AEA" : "rgba(255,255,255,0.2)", background: "none", border: "none", cursor: "pointer", fontFamily: "'Plus Jakarta Sans', sans-serif" }}
+                        >
+                          {copied === copyKey ? "✓" : "Copy"}
+                        </button>
+                      </div>
+                      <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.6)" }}>{text}</p>
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
