@@ -17,7 +17,7 @@ export default function LoginPage() {
     setError("");
     try {
       await login(email, password);
-      router.push("/generate");
+      window.location.href = "/generate";
     } catch {
       setError("Email ya password galat hai");
     } finally {

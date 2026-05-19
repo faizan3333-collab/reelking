@@ -31,7 +31,7 @@ export default function SignupPage() {
         createdAt: new Date(),
       });
 
-      router.push("/generate");
+      window.location.href = "/generate";
     } catch (err: any) {
       if (err.code === "auth/email-already-in-use") {
         setError("Ye email pehle se registered hai");
