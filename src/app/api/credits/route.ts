@@ -1,60 +1,76 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebase/admin";
+import { getAuth } from "firebase-admin/auth";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { initAdminApp } from "@/lib/firebase/admin";
+
+initAdminApp();
 
 const MAX_ADS_PER_DAY = 10;
+const CREDITS_PER_AD = 3;
+const PACK_CREDITS: Record<string, number> = {
+  small: 200,
+  large: 500,
+};
 
 export async function POST(req: NextRequest) {
   try {
-    const token = req.headers.get("authorization")?.split("Bearer ")[1];
-    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const decoded = await adminAuth.verifyIdToken(token);
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const token = authHeader.split("Bearer ")[1];
+    const decoded = await getAuth().verifyIdToken(token);
     const uid = decoded.uid;
 
-    const { type, packSize } = await req.json();
+    const body = await req.json();
+    const { type, packSize } = body;
 
-    const userRef = adminDb.collection("users").doc(uid);
+    const db = getFirestore();
+    const userRef = db.collection("users").doc(uid);
     const userDoc = await userRef.get();
-    const userData = userDoc.data();
 
-    if (!userData) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    if (!userDoc.exists) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const user = userDoc.data()!;
+    const today = new Date().toISOString().split("T")[0];
 
     if (type === "ad") {
-      // Daily ad limit check
-      const today = new Date().toISOString().split("T")[0];
-      const adsToday = userData.adsToday ?? 0;
-      const adDate = userData.adDate ?? "";
+      const adsToday = user.adDate === today ? (user.adsToday || 0) : 0;
 
-      if (adDate === today && adsToday >= MAX_ADS_PER_DAY) {
-        return NextResponse.json({ error: "Aaj ke ads khatam — kal aana" }, { status: 403 });
+      if (adsToday >= MAX_ADS_PER_DAY) {
+        return NextResponse.json(
+          { error: `Aaj ke ${MAX_ADS_PER_DAY} ads ho gaye. Kal aao!` },
+          { status: 429 }
+        );
       }
 
       await userRef.update({
-        credits: (userData.credits ?? 0) + 3,
-        adsToday: adDate === today ? adsToday + 1 : 1,
+        credits: FieldValue.increment(CREDITS_PER_AD),
+        adsToday: adsToday + 1,
         adDate: today,
       });
 
-      return NextResponse.json({ success: true, creditsAdded: 3 });
+      return NextResponse.json({
+        success: true,
+        creditsAdded: CREDITS_PER_AD,
+        message: `+${CREDITS_PER_AD} credits mile! (${adsToday + 1}/${MAX_ADS_PER_DAY} aaj)`,
+      });
     }
 
     if (type === "pack") {
-      // Pack credits — called from Cashfree webhook, not directly
-      const creditsMap = { small: 200, large: 500 };
-      const add = creditsMap[packSize as "small" | "large"] ?? 0;
-      if (!add) return NextResponse.json({ error: "Invalid pack" }, { status: 400 });
-
-      await userRef.update({
-        credits: (userData.credits ?? 0) + add,
-      });
-
-      return NextResponse.json({ success: true, creditsAdded: add });
+      if (!packSize || !PACK_CREDITS[packSize]) {
+        return NextResponse.json({ error: "Invalid pack" }, { status: 400 });
+      }
+      // Pack credits are added via webhook after payment
+      // This endpoint is for confirming pack (future use)
+      return NextResponse.json({ success: true, message: "Payment initiate karo" });
     }
 
     return NextResponse.json({ error: "Invalid type" }, { status: 400 });
-
-  } catch (error) {
-    console.error("Credits error:", error);
+  } catch (err) {
+    console.error("Credits error:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

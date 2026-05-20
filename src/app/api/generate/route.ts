@@ -1,70 +1,90 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebase/admin";
+import { getAuth } from "firebase-admin/auth";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { initAdminApp } from "@/lib/firebase/admin";
 import { generateContent } from "@/lib/gemini";
-import { buildPrompt } from "@/features/generation/prompts";
-import { PLANS } from "@/lib/constants";
+import { checkRateLimit } from "@/lib/rateLimit";
+
+initAdminApp();
+
+const FREE_LIMIT = 3;
 
 export async function POST(req: NextRequest) {
   try {
-    // Auth check
-    const token = req.headers.get("authorization")?.split("Bearer ")[1];
-    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const decoded = await adminAuth.verifyIdToken(token);
+    // Auth
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const token = authHeader.split("Bearer ")[1];
+    const decoded = await getAuth().verifyIdToken(token);
     const uid = decoded.uid;
 
-    // Credit check
-    const userRef = adminDb.collection("users").doc(uid);
-    const userDoc = await userRef.get();
-    const userData = userDoc.data();
+    // Rate limit
+    const { allowed, response: rlResponse } = await checkRateLimit(req, uid);
+    if (!allowed) return rlResponse!;
 
-    if (!userData) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    const body = await req.json();
+    const { idea, platforms } = body;
 
-    const credits = userData.credits ?? 0;
-    const lifetimeUsed = userData.lifetimeUsed ?? 0;
-    const isPro = userData.isPro ?? false;
-
-    // Free tier check
-    if (!isPro && credits <= 0 && lifetimeUsed >= PLANS.FREE_LIFETIME_GENS) {
-      return NextResponse.json({ error: "NO_CREDITS" }, { status: 403 });
-    }
-
-    // Parse request
-    const { idea, platforms } = await req.json();
     if (!idea || !platforms?.length) {
-      return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+      return NextResponse.json({ error: "idea aur platforms dono chahiye" }, { status: 400 });
     }
 
-    // Generate
-    const prompt = buildPrompt(idea, platforms);
-    const raw = await generateContent(prompt);
+    const db = getFirestore();
+    const userRef = db.collection("users").doc(uid);
+    const userDoc = await userRef.get();
 
-    // Parse JSON
-    const clean = raw.replace(/```json|```/g, "").trim();
-    const output = JSON.parse(clean);
+    if (!userDoc.exists) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
 
-    // Deduct credit
-    if (!isPro) {
-      if (credits > 0) {
-        await userRef.update({ credits: credits - 1 });
-      } else {
-        await userRef.update({ lifetimeUsed: lifetimeUsed + 1 });
+    const user = userDoc.data()!;
+    const isPro = user.isPro === true;
+    const credits = user.credits || 0;
+    const lifetimeUsed = user.lifetimeUsed || 0;
+
+    // Pro expiry check
+    if (isPro && user.proExpiresAt) {
+      const expiry = user.proExpiresAt.toDate?.() || new Date(user.proExpiresAt);
+      if (expiry < new Date()) {
+        await userRef.update({ isPro: false });
+        return NextResponse.json(
+          { error: "Pro subscription expire ho gayi. Renew karo!" },
+          { status: 402 }
+        );
       }
     }
 
+    // Credit check
+    if (!isPro) {
+      if (credits > 0) {
+        await userRef.update({ credits: FieldValue.increment(-1) });
+      } else if (lifetimeUsed < FREE_LIMIT) {
+        await userRef.update({ lifetimeUsed: FieldValue.increment(1) });
+      } else {
+        return NextResponse.json(
+          { error: "Credits khatam! Ad dekho ya pack kharido." },
+          { status: 402 }
+        );
+      }
+    }
+
+    // Generate
+    const output = await generateContent({ idea, platforms });
+
     // Save to history
-    await adminDb.collection("generations").add({
+    await db.collection("generations").add({
       uid,
       idea,
       platforms,
       output,
-      createdAt: new Date(),
+      createdAt: FieldValue.serverTimestamp(),
     });
 
     return NextResponse.json({ success: true, output });
-
-  } catch (error) {
-    console.error("Generate error:", error);
+  } catch (err) {
+    console.error("Generate error:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

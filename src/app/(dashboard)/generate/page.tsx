@@ -3,183 +3,516 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCredits } from "@/hooks/useCredits";
-import { PLATFORMS } from "@/lib/constants";
+import { useRouter } from "next/navigation";
 
-export default function GeneratePage() {
-  const { user, getToken } = useAuth();
-  const { canGenerate, creditsLeft, isPro } = useCredits(user?.uid ?? null);
-  const [idea, setIdea] = useState("");
-  const [selected, setSelected] = useState<string[]>(["youtube", "instagram", "facebook"]);
-  const [output, setOutput] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+const PLATFORMS = [
+  { id: "youtube", label: "YouTube Shorts", icon: "▶️" },
+  { id: "instagram", label: "Instagram Reels", icon: "📸" },
+  { id: "facebook", label: "Facebook Reels", icon: "👤" },
+  { id: "whatsapp", label: "WhatsApp Status", icon: "💬" },
+];
+
+type OutputField = {
+  label: string;
+  value: string;
+};
+
+function OutputCard({
+  platform,
+  fields,
+}: {
+  platform: string;
+  fields: OutputField[];
+}) {
   const [copied, setCopied] = useState<string | null>(null);
 
-  const togglePlatform = (id: string) => {
-    setSelected(prev =>
-      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
-    );
-  };
+  async function copy(text: string, key: string) {
+    await navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+  }
 
-  const handleGenerate = async () => {
-    if (!idea.trim()) { setError("Pehle apna idea likho"); return; }
-    if (selected.length === 0) { setError("Kam se kam ek platform select karo"); return; }
-    if (!canGenerate) { setError("Credits khatam — ad dekho ya Pro lo"); return; }
+  const platformInfo = PLATFORMS.find((p) => p.id === platform);
+
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.03)",
+        border: "1px solid rgba(255,255,255,0.07)",
+        borderRadius: 14,
+        padding: 16,
+        marginBottom: 12,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 14,
+          fontWeight: 700,
+          color: "#9F7AEA",
+          marginBottom: 12,
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        <span>{platformInfo?.icon}</span> {platformInfo?.label || platform}
+      </div>
+
+      {fields.map((field) => (
+        <div key={field.label} style={{ marginBottom: 12 }}>
+          <div
+            style={{
+              fontSize: 11,
+              color: "rgba(255,255,255,0.3)",
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              marginBottom: 4,
+            }}
+          >
+            {field.label}
+          </div>
+          <div
+            style={{
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.07)",
+              borderRadius: 8,
+              padding: "10px 12px",
+              fontSize: 13,
+              color: "rgba(255,255,255,0.8)",
+              lineHeight: 1.5,
+              wordBreak: "break-word",
+              position: "relative",
+            }}
+          >
+            <pre
+              style={{
+                margin: 0,
+                fontFamily: "inherit",
+                whiteSpace: "pre-wrap",
+                fontSize: 13,
+              }}
+            >
+              {field.value}
+            </pre>
+            <button
+              onClick={() => copy(field.value, `${platform}-${field.label}`)}
+              style={{
+                position: "absolute",
+                top: 6,
+                right: 6,
+                background: "rgba(124,58,237,0.2)",
+                border: "1px solid rgba(124,58,237,0.3)",
+                borderRadius: 6,
+                padding: "3px 8px",
+                color: copied === `${platform}-${field.label}` ? "#4ade80" : "#9F7AEA",
+                fontSize: 11,
+                cursor: "pointer",
+              }}
+            >
+              {copied === `${platform}-${field.label}` ? "✓" : "Copy"}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function parseOutput(output: Record<string, unknown>) {
+  const result: Record<string, OutputField[]> = {};
+
+  if (output.youtube) {
+    const yt = output.youtube as Record<string, unknown>;
+    result.youtube = [
+      { label: "Title", value: String(yt.title || "") },
+      { label: "Description", value: String(yt.description || "") },
+      {
+        label: "Hashtags",
+        value: Array.isArray(yt.hashtags) ? yt.hashtags.join(" ") : String(yt.hashtags || ""),
+      },
+    ];
+  }
+  if (output.instagram) {
+    const ig = output.instagram as Record<string, unknown>;
+    result.instagram = [
+      { label: "Caption", value: String(ig.caption || "") },
+      {
+        label: "Hashtags",
+        value: Array.isArray(ig.hashtags) ? ig.hashtags.join(" ") : String(ig.hashtags || ""),
+      },
+    ];
+  }
+  if (output.facebook) {
+    const fb = output.facebook as Record<string, unknown>;
+    result.facebook = [
+      { label: "Caption", value: String(fb.caption || "") },
+      {
+        label: "Hashtags",
+        value: Array.isArray(fb.hashtags) ? fb.hashtags.join(" ") : String(fb.hashtags || ""),
+      },
+    ];
+  }
+  if (output.whatsapp) {
+    const wa = output.whatsapp as Record<string, unknown>;
+    result.whatsapp = [{ label: "Message", value: String(wa.message || "") }];
+  }
+
+  return result;
+}
+
+export default function GeneratePage() {
+  const { user } = useAuth();
+  const { credits, isPro, lifetimeUsed } = useCredits();
+  const router = useRouter();
+
+  const [idea, setIdea] = useState("");
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["youtube"]);
+  const [loading, setLoading] = useState(false);
+  const [output, setOutput] = useState<Record<string, OutputField[]> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const freeRemaining = Math.max(0, 3 - (lifetimeUsed || 0));
+  const canGenerate = isPro || credits > 0 || freeRemaining > 0;
+
+  function togglePlatform(id: string) {
+    setSelectedPlatforms((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
+    );
+  }
+
+  async function handleGenerate() {
+    if (!idea.trim() || selectedPlatforms.length === 0 || loading) return;
+    if (!canGenerate) {
+      router.push("/credits");
+      return;
+    }
+
     setLoading(true);
-    setError("");
+    setError(null);
     setOutput(null);
+
     try {
-      const token = await getToken();
+      const token = await user!.getIdToken();
       const res = await fetch("/api/generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ idea, platforms: selected }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ idea: idea.trim(), platforms: selectedPlatforms }),
       });
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setOutput(data.output);
-    } catch (err: any) {
-      if (err.message === "NO_CREDITS") setError("Credits khatam — ad dekho ya Pro lo");
-      else setError("Kuch galat ho gaya — dobara try karo");
+
+      if (!res.ok) {
+        if (res.status === 402) router.push("/credits");
+        else setError(data.error || "Kuch gadbad ho gayi");
+        return;
+      }
+
+      const parsed = parseOutput(data.output);
+      setOutput(parsed);
+    } catch {
+      setError("Network error. Dobara try karo.");
     } finally {
       setLoading(false);
     }
-  };
-
-  const copyText = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(key);
-    setTimeout(() => setCopied(null), 2000);
-  };
-
-  const platformMeta: Record<string, { icon: string; color: string; label: string }> = {
-    youtube:   { icon: "▶",  color: "rgba(255,0,0,0.15)",     label: "YouTube Shorts" },
-    instagram: { icon: "📸", color: "rgba(214,40,120,0.15)",  label: "Instagram Reels" },
-    facebook:  { icon: "👥", color: "rgba(24,119,242,0.15)",  label: "Facebook Reels" },
-    whatsapp:  { icon: "💬", color: "rgba(37,211,102,0.15)",  label: "WhatsApp" },
-  };
-
-  const fieldLabels: Record<string, string> = {
-    title: "Title", description: "Description", caption: "Caption",
-    hashtags: "Hashtags", message: "Message",
-  };
+  }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Topbar */}
-      <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between">
-        <div>
-          <h1 className="text-base font-bold text-white">Content Generate Karo ✨</h1>
-          <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>
-            Apna idea daalo — sab platforms ke liye ready
-          </p>
-        </div>
-        <div className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-          style={{ background: isPro ? "rgba(124,58,237,0.2)" : "rgba(255,255,255,0.05)", color: isPro ? "#9F7AEA" : "rgba(255,255,255,0.4)", border: isPro ? "1px solid rgba(124,58,237,0.3)" : "1px solid rgba(255,255,255,0.08)" }}>
-          {isPro ? "👑 Pro" : `${creditsLeft} credits`}
-        </div>
-      </div>
+    <div>
+      <h1 style={{ fontSize: 22, fontWeight: 700, color: "#fff", marginBottom: 4 }}>
+        ⚡ Content Generate Karo
+      </h1>
+      <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 14, marginBottom: 24 }}>
+        Ek idea do, viral content lo — sabhi platforms ke liye
+      </p>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left - Input */}
-        <div className="flex-1 p-6 flex flex-col gap-4 overflow-auto">
-          {/* Platform selector */}
-          <div className="rounded-2xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
-            <p className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "rgba(255,255,255,0.35)" }}>Platform select karo</p>
-            <div className="grid grid-cols-2 gap-2">
-              {PLATFORMS.map(({ id, label, emoji }) => (
-                <button key={id} onClick={() => togglePlatform(id)}
-                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
-                  style={{
-                    background: selected.includes(id) ? "rgba(124,58,237,0.15)" : "rgba(255,255,255,0.04)",
-                    border: selected.includes(id) ? "1px solid rgba(124,58,237,0.4)" : "1px solid rgba(255,255,255,0.08)",
-                    color: selected.includes(id) ? "#9F7AEA" : "rgba(255,255,255,0.5)",
-                  }}
-                >
-                  <span>{emoji}</span>
-                  <span className="text-xs">{label}</span>
-                </button>
-              ))}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 24,
+        }}
+        className="gen-grid"
+      >
+        {/* Input panel */}
+        <div>
+          {/* Credit status */}
+          {!isPro && (
+            <div
+              style={{
+                padding: "10px 14px",
+                borderRadius: 10,
+                background: canGenerate
+                  ? "rgba(34,197,94,0.08)"
+                  : "rgba(239,68,68,0.08)",
+                border: `1px solid ${canGenerate ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)"}`,
+                fontSize: 13,
+                color: canGenerate ? "#4ade80" : "#f87171",
+                marginBottom: 16,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              {canGenerate ? (
+                <>
+                  <span>✅</span>{" "}
+                  {credits > 0
+                    ? `${credits} credits available`
+                    : `${freeRemaining} free gens left`}
+                </>
+              ) : (
+                <>
+                  <span>⚠️</span> Credits khatam!{" "}
+                  <button
+                    onClick={() => router.push("/credits")}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#f87171",
+                      textDecoration: "underline",
+                      cursor: "pointer",
+                      padding: 0,
+                      fontSize: 13,
+                    }}
+                  >
+                    Top up karo
+                  </button>
+                </>
+              )}
             </div>
-          </div>
+          )}
 
           {/* Idea input */}
-          <div className="rounded-2xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
-            <p className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "rgba(255,255,255,0.35)" }}>Apna idea likho</p>
+          <div style={{ marginBottom: 16 }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: 13,
+                fontWeight: 600,
+                color: "rgba(255,255,255,0.7)",
+                marginBottom: 6,
+              }}
+            >
+              Content Idea
+            </label>
             <textarea
               value={idea}
               onChange={(e) => setIdea(e.target.value)}
-              placeholder="Jaise: mera pehla vlog, cooking tips, gym motivation, paisa kamane ke tarike..."
-              rows={4}
-              className="w-full rounded-xl px-4 py-3 text-sm text-white outline-none resize-none"
-              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", fontFamily: "'Plus Jakarta Sans', sans-serif" }}
+              placeholder="Example: Diabetes ke liye 5 gharelu nuskhe jo doctor bhi batate hain..."
+              rows={5}
+              style={{
+                width: "100%",
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 10,
+                padding: "12px 14px",
+                color: "#fff",
+                fontSize: 14,
+                resize: "vertical",
+                outline: "none",
+                fontFamily: "inherit",
+                boxSizing: "border-box",
+                minHeight: 120,
+              }}
             />
           </div>
 
-          {error && <p className="text-red-400 text-xs px-1">{error}</p>}
+          {/* Platform selection */}
+          <div style={{ marginBottom: 20 }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: 13,
+                fontWeight: 600,
+                color: "rgba(255,255,255,0.7)",
+                marginBottom: 8,
+              }}
+            >
+              Platforms
+            </label>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+              }}
+            >
+              {PLATFORMS.map((p) => {
+                const selected = selectedPlatforms.includes(p.id);
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => togglePlatform(p.id)}
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: selected
+                        ? "1px solid rgba(124,58,237,0.6)"
+                        : "1px solid rgba(255,255,255,0.1)",
+                      background: selected
+                        ? "rgba(124,58,237,0.15)"
+                        : "rgba(255,255,255,0.03)",
+                      color: selected ? "#9F7AEA" : "rgba(255,255,255,0.5)",
+                      fontSize: 13,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontWeight: selected ? 600 : 400,
+                      minHeight: 44,
+                    }}
+                  >
+                    <span>{p.icon}</span>
+                    <span style={{ fontSize: 12 }}>{p.label.split(" ")[0]}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-          <button onClick={handleGenerate} disabled={loading}
-            className="w-full py-3.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50 transition-opacity hover:opacity-90 flex items-center justify-center gap-2"
-            style={{ background: "linear-gradient(135deg,#7C3AED,#4F46E5)" }}
+          {/* Generate button */}
+          <button
+            onClick={handleGenerate}
+            disabled={loading || !idea.trim() || selectedPlatforms.length === 0}
+            style={{
+              width: "100%",
+              padding: "14px",
+              borderRadius: 10,
+              border: "none",
+              background:
+                loading || !idea.trim() || selectedPlatforms.length === 0
+                  ? "rgba(124,58,237,0.3)"
+                  : "linear-gradient(135deg,#7C3AED,#4F46E5)",
+              color: "#fff",
+              fontSize: 15,
+              fontWeight: 700,
+              cursor:
+                loading || !idea.trim() || selectedPlatforms.length === 0
+                  ? "not-allowed"
+                  : "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              minHeight: 48,
+            }}
           >
-            {loading ? <><span className="animate-spin">⏳</span> Generate ho raha hai...</> : "✨ Generate Karo"}
+            {loading ? (
+              <>
+                <span
+                  style={{
+                    width: 18,
+                    height: 18,
+                    border: "2px solid rgba(255,255,255,0.3)",
+                    borderTopColor: "#fff",
+                    borderRadius: "50%",
+                    animation: "spin 0.7s linear infinite",
+                    display: "inline-block",
+                  }}
+                />
+                AI soch raha hai...
+              </>
+            ) : (
+              "⚡ Generate Content"
+            )}
           </button>
         </div>
 
-        {/* Right - Output */}
-        <div className="w-80 p-6 border-l border-white/5 overflow-auto flex flex-col gap-3" style={{ background: "#110F1A" }}>
-          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.25)" }}>Output</p>
-
-          {!output && !loading && (
-            <div className="flex-1 flex flex-col items-center justify-center text-center py-16">
-              <div className="text-4xl mb-3 opacity-30">✨</div>
-              <p className="text-xs" style={{ color: "rgba(255,255,255,0.25)" }}>Idea likho aur Generate dabao</p>
+        {/* Output panel */}
+        <div style={{ background: "#110F1A", borderRadius: 14, padding: 16, minHeight: 200 }}>
+          {!output && !error && !loading && (
+            <div
+              style={{
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "rgba(255,255,255,0.2)",
+                textAlign: "center",
+                minHeight: 200,
+              }}
+            >
+              <div style={{ fontSize: 40, marginBottom: 8 }}>✨</div>
+              <p style={{ fontSize: 14 }}>Idea do, viral content yahan aayega</p>
             </div>
           )}
 
           {loading && (
-            <div className="flex-1 flex flex-col items-center justify-center text-center py-16">
-              <div className="text-3xl mb-3 animate-pulse">🤖</div>
-              <p className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>AI likh raha hai...</p>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                minHeight: 200,
+                gap: 12,
+              }}
+            >
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  border: "3px solid rgba(124,58,237,0.3)",
+                  borderTopColor: "#7C3AED",
+                  borderRadius: "50%",
+                  animation: "spin 0.7s linear infinite",
+                }}
+              />
+              <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>
+                Viral content ban raha hai...
+              </p>
             </div>
           )}
 
-          {output && selected.map(platformId => {
-            const meta = platformMeta[platformId];
-            const data = output[platformId];
-            if (!data) return null;
-            return (
-              <div key={platformId} className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs" style={{ background: meta.color }}>{meta.icon}</div>
-                  <span className="text-xs font-semibold text-white">{meta.label}</span>
-                </div>
+          {error && (
+            <div
+              style={{
+                padding: 16,
+                borderRadius: 10,
+                background: "rgba(239,68,68,0.1)",
+                border: "1px solid rgba(239,68,68,0.3)",
+                color: "#f87171",
+                fontSize: 14,
+              }}
+            >
+              ⚠️ {error}
+            </div>
+          )}
 
-                {Object.entries(data).map(([key, val]) => {
-                  const text = Array.isArray(val) ? (val as string[]).join(" ") : val as string;
-                  const copyKey = `${platformId}-${key}`;
-                  return (
-                    <div key={key} className="rounded-lg p-2.5 mb-2 group relative" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#9F7AEA" }}>
-                          {fieldLabels[key] || key}
-                        </p>
-                        <button onClick={() => copyText(text, copyKey)}
-                          className="text-xs transition-colors"
-                          style={{ color: copied === copyKey ? "#9F7AEA" : "rgba(255,255,255,0.2)", background: "none", border: "none", cursor: "pointer", fontFamily: "'Plus Jakarta Sans', sans-serif" }}
-                        >
-                          {copied === copyKey ? "✓" : "Copy"}
-                        </button>
-                      </div>
-                      <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.6)" }}>{text}</p>
-                    </div>
-                  );
-                })}
+          {output && (
+            <div>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#4ade80",
+                  marginBottom: 12,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                ✅ Content ready hai! Copy karo aur post karo.
               </div>
-            );
-          })}
+              {Object.entries(output).map(([platform, fields]) => (
+                <OutputCard key={platform} platform={platform} fields={fields} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width: 768px) {
+          .gen-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
