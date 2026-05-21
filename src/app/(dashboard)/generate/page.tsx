@@ -162,7 +162,7 @@ function parseOutput(output: Record<string, unknown>) {
 
 export default function GeneratePage() {
   const { user } = useAuth();
-  const { credits, isPro, lifetimeUsed } = useCredits();
+  const { credits, isPro, lifetimeUsed } = useCredits(user?.uid ?? null);
   const router = useRouter();
 
   const [idea, setIdea] = useState("");

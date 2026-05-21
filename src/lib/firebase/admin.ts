@@ -14,3 +14,6 @@ if (!getApps().length) {
 
 export const adminDb = getFirestore();
 export const adminAuth = getAuth();
+export function initAdminApp() {
+  // already initialized above via getApps() check
+}
